@@ -242,6 +242,14 @@ impl PopupMenuItem {
             )
     }
 
+    fn is_selectable(&self) -> bool {
+        match self {
+            Self::Item { .. } | Self::Submenu { .. } => true,
+            Self::ElementItem { handler, action, .. } => handler.is_some() || action.is_some(),
+            _ => false,
+        }
+    }
+
     #[inline]
     fn is_separator(&self) -> bool {
         matches!(self, PopupMenuItem::Separator)
@@ -835,7 +843,7 @@ impl PopupMenu {
         if let Some(ix) = self.selected_index {
             if let Some(item) = self.menu_items.get(ix) {
                 return match item {
-                    PopupMenuItem::Submenu { menu, .. } => Some(menu.clone()),
+                    PopupMenuItem::Submenu { menu, disabled: false, .. } => Some(menu.clone()),
                     _ => None,
                 };
             }
@@ -848,11 +856,11 @@ impl PopupMenu {
         self.menu_items.is_empty()
     }
 
-    fn clickable_menu_items(&self) -> impl Iterator<Item = (usize, &PopupMenuItem)> {
+    fn selectable_menu_items(&self) -> impl Iterator<Item = (usize, &PopupMenuItem)> {
         self.menu_items
             .iter()
             .enumerate()
-            .filter(|(_, item)| item.is_clickable())
+            .filter(|(_, item)| item.is_selectable())
     }
 
     fn on_click(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -866,6 +874,9 @@ impl PopupMenu {
         match self.selected_index {
             Some(index) => {
                 let item = self.menu_items.get(index);
+                if !item.is_some_and(PopupMenuItem::is_clickable) {
+                    return;
+                }
                 match item {
                     Some(PopupMenuItem::Item {
                         handler, action, ..
@@ -926,13 +937,13 @@ impl PopupMenu {
             .iter()
             .enumerate()
             .rev()
-            .find(|(i, item)| *i < ix && item.is_clickable())
+            .find(|(i, item)| *i < ix && item.is_selectable())
         {
             self.set_selected_index(prev_ix, cx);
             return;
         }
 
-        let last_clickable_ix = self.clickable_menu_items().last().map(|(ix, _)| ix);
+        let last_clickable_ix = self.selectable_menu_items().last().map(|(ix, _)| ix);
         self.set_selected_index(last_clickable_ix.unwrap_or(0), cx);
     }
 
@@ -947,7 +958,7 @@ impl PopupMenu {
             .menu_items
             .iter()
             .enumerate()
-            .find(|(i, item)| *i > ix && item.is_clickable())
+            .find(|(i, item)| *i > ix && item.is_selectable())
         {
             self.set_selected_index(next_ix, cx);
             return;
