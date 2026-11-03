@@ -303,6 +303,7 @@ pub struct PopupMenu {
     pub(crate) trigger_focus_handle: Option<FocusHandle>,
     selected_index: Option<usize>,
     submenu_closed: bool,
+    submenu_indicator: Option<Rc<dyn Fn(bool, &mut Window, &mut App) -> AnyElement>>,
     min_width: Option<Pixels>,
     max_width: Option<Pixels>,
     max_height: Option<Pixels>,
@@ -350,6 +351,7 @@ impl PopupMenu {
             menu_items: Vec::new(),
             selected_index: None,
             submenu_closed: false,
+            submenu_indicator: None,
             min_width: None,
             max_width: None,
             max_height: None,
@@ -1006,6 +1008,15 @@ impl PopupMenu {
         Some(parent.read(cx).submenu_opens_right())
     }
 
+    /// Customize the opening indicator using the submenu's placement.
+    pub fn submenu_indicator(
+        mut self,
+        render: impl Fn(bool, &mut Window, &mut App) -> AnyElement + 'static,
+    ) -> Self {
+        self.submenu_indicator = Some(Rc::new(render));
+        self
+    }
+
     fn _select_submenu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.submenu_closed = false;
         if let Some(active_submenu) = self.active_submenu() {
@@ -1377,9 +1388,14 @@ impl PopupMenu {
                                 .justify_between()
                                 .child(label.clone())
                                 .child(
-                                    Icon::new(IconName::ChevronRight)
-                                        .xsmall()
-                                        .text_color(cx.theme().muted_foreground),
+                                    if let Some(render) = &self.submenu_indicator {
+                                        render(self.submenu_opens_right(), window, cx)
+                                    } else {
+                                        Icon::new(IconName::ChevronRight)
+                                            .xsmall()
+                                            .text_color(cx.theme().muted_foreground)
+                                            .into_any_element()
+                                    },
                                 ),
                         ),
                 )
