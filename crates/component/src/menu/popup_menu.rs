@@ -294,6 +294,7 @@ pub struct PopupMenu {
     /// rendered frame, and the trigger was in it when the menu was not yet.
     pub(crate) trigger_focus_handle: Option<FocusHandle>,
     selected_index: Option<usize>,
+    submenu_closed: bool,
     min_width: Option<Pixels>,
     max_width: Option<Pixels>,
     max_height: Option<Pixels>,
@@ -340,6 +341,7 @@ impl PopupMenu {
             parent_menu: None,
             menu_items: Vec::new(),
             selected_index: None,
+            submenu_closed: false,
             min_width: None,
             max_width: None,
             max_height: None,
@@ -759,6 +761,7 @@ impl PopupMenu {
         let mut menu = std::mem::replace(self, Self::new(cx));
         menu.menu_items.clear();
         menu.selected_index = None;
+        menu.submenu_closed = false;
         *self = f(menu, window, cx);
         cx.notify();
     }
@@ -826,6 +829,9 @@ impl PopupMenu {
     }
 
     pub(crate) fn active_submenu(&self) -> Option<Entity<PopupMenu>> {
+        if self.submenu_closed {
+            return None;
+        }
         if let Some(ix) = self.selected_index {
             if let Some(item) = self.menu_items.get(ix) {
                 return match item {
@@ -905,6 +911,7 @@ impl PopupMenu {
     fn set_selected_index(&mut self, ix: usize, cx: &mut Context<Self>) {
         if self.selected_index != Some(ix) {
             self.selected_index = Some(ix);
+            self.submenu_closed = true;
             self.scroll_handle.scroll_to_item(ix);
             cx.notify();
         }
@@ -950,48 +957,36 @@ impl PopupMenu {
     }
 
     fn select_left(&mut self, _: &SelectLeft, window: &mut Window, cx: &mut Context<Self>) {
-        let handled = if matches!(self.submenu_anchor.0, Anchor::TopLeft | Anchor::BottomLeft) {
-            self._unselect_submenu(window, cx)
-        } else {
-            self._select_submenu(window, cx)
-        };
-
-        if self.parent_side(cx).is_left() {
+        if self.parent_opens_right(cx) == Some(true) {
             self._focus_parent_menu(window, cx);
-        }
-
-        if handled {
-            return;
-        }
-
-        // For parent AppMenuBar to handle.
-        if self.parent_menu.is_none() {
-            cx.propagate();
+        } else if !self.submenu_opens_right() {
+            self._select_submenu(window, cx);
+        } else {
+            self._unselect_submenu(window, cx);
         }
     }
 
     fn select_right(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
-        let handled = if matches!(self.submenu_anchor.0, Anchor::TopLeft | Anchor::BottomLeft) {
-            self._select_submenu(window, cx)
-        } else {
-            self._unselect_submenu(window, cx)
-        };
-
-        if self.parent_side(cx).is_right() {
+        if self.parent_opens_right(cx) == Some(false) {
             self._focus_parent_menu(window, cx);
-        }
-
-        if handled {
-            return;
-        }
-
-        // For parent AppMenuBar to handle.
-        if self.parent_menu.is_none() {
-            cx.propagate();
+        } else if self.submenu_opens_right() {
+            self._select_submenu(window, cx);
+        } else {
+            self._unselect_submenu(window, cx);
         }
     }
 
+    fn submenu_opens_right(&self) -> bool {
+        matches!(self.submenu_anchor.0, Anchor::TopLeft | Anchor::BottomLeft)
+    }
+
+    fn parent_opens_right(&self, cx: &App) -> Option<bool> {
+        let parent = self.parent_menu.as_ref()?.upgrade()?;
+        Some(parent.read(cx).submenu_opens_right())
+    }
+
     fn _select_submenu(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.submenu_closed = false;
         if let Some(active_submenu) = self.active_submenu() {
             // Focus the submenu, so that can be handle the action.
             active_submenu.update(cx, |view, cx| {
@@ -1011,6 +1006,8 @@ impl PopupMenu {
                 view.selected_index = None;
                 cx.notify();
             });
+            self.submenu_closed = true;
+            cx.notify();
             return true;
         }
 
@@ -1027,26 +1024,10 @@ impl PopupMenu {
 
         self.selected_index = None;
         parent.update(cx, |view, cx| {
+            view.submenu_closed = true;
             view.focus_handle.focus(window, cx);
             cx.notify();
         });
-    }
-
-    fn parent_side(&self, cx: &App) -> Side {
-        let Some(parent) = self.parent_menu.as_ref() else {
-            return Side::Left;
-        };
-
-        let Some(parent) = parent.upgrade() else {
-            return Side::Left;
-        };
-
-        match parent.read(cx).submenu_anchor.0 {
-            Anchor::TopLeft | Anchor::BottomLeft => Side::Left,
-            Anchor::TopRight | Anchor::BottomRight => Side::Right,
-            // Center anchors are not used for submenu positioning, but we must cover them.
-            _ => Side::Left,
-        }
     }
 
     /// Dismiss the menu and the entire parent chain.
@@ -1233,6 +1214,7 @@ impl PopupMenu {
             .on_hover(cx.listener(move |this, hovered, window, cx| {
                 if *hovered {
                     this.selected_index = Some(ix);
+                    this.submenu_closed = false;
                 } else if !is_submenu
                     && this.selected_index == Some(ix)
                     // A key press ends hover under a still pointer; keep the
@@ -1380,7 +1362,7 @@ impl PopupMenu {
                                 ),
                         ),
                 )
-                .when(selected, |this| {
+                .when(selected && !self.submenu_closed, |this| {
                     this.child({
                         let (anchor, left) = self.submenu_anchor;
                         let is_bottom_pos =
