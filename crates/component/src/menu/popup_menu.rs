@@ -957,6 +957,7 @@ impl PopupMenu {
     }
 
     fn select_left(&mut self, _: &SelectLeft, window: &mut Window, cx: &mut Context<Self>) {
+        cx.stop_propagation();
         if self.parent_opens_right(cx) == Some(true) {
             self._focus_parent_menu(window, cx);
         } else if !self.submenu_opens_right() {
@@ -967,6 +968,7 @@ impl PopupMenu {
     }
 
     fn select_right(&mut self, _: &SelectRight, window: &mut Window, cx: &mut Context<Self>) {
+        cx.stop_propagation();
         if self.parent_opens_right(cx) == Some(false) {
             self._focus_parent_menu(window, cx);
         } else if self.submenu_opens_right() {
@@ -1458,6 +1460,7 @@ impl Render for PopupMenu {
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::confirm))
             .on_action(cx.listener(Self::dismiss))
+            .on_key_down(|_, _, cx| cx.stop_propagation())
             .on_mouse_down_out(cx.listener(Self::on_mouse_down_out))
             .popover_style(cx)
             .text_color(cx.theme().popover_foreground)
