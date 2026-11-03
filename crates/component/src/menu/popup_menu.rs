@@ -852,6 +852,14 @@ impl PopupMenu {
         None
     }
 
+    /// Select the first action without opening a submenu.
+    pub fn select_first(mut self) -> Self {
+        let first_index = self.selectable_menu_items().next().map(|(ix, _)| ix);
+        self.selected_index = first_index;
+        self.submenu_closed = true;
+        self
+    }
+
     pub fn is_empty(&self) -> bool {
         self.menu_items.is_empty()
     }
