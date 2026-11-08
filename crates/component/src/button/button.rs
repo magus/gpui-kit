@@ -405,6 +405,15 @@ impl Button {
         self
     }
 
+    /// Build a custom tooltip while keeping the shared hover behavior and positioning.
+    pub fn tooltip_builder(
+        mut self,
+        builder: impl Fn(&mut Window, &mut App) -> gpui::AnyView + 'static,
+    ) -> Self {
+        self.tooltip_builder = Some(Rc::new(builder));
+        self
+    }
+
     /// Prefer a side for the tooltip, falling back when it does not fit.
     ///
     /// Applies to [`Self::tooltip`] and [`Self::tooltip_with_action`].
